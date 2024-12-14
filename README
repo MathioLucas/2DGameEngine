@@ -1,0 +1,11 @@
+To run this game install:
+pip install pygame numpy noise
+
+The game features:
+
+A player character that can move around
+Randomly spawned enemies that chase the player
+Procedurally generated terrain with changing colors
+Basic health and coin collection mechanics
+
+
