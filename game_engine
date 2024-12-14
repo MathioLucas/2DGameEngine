@@ -1,0 +1,186 @@
+import pygame
+import random
+import math
+import noise
+import numpy as np
+from dataclasses import dataclass, field
+from typing import List, Tuple, Dict, Optional
+from enum import Enum, auto
+
+class GameState(Enum):
+    MENU = auto()
+    PLAYING = auto()
+    PAUSED = auto()
+    GAME_OVER = auto()
+
+@dataclass
+class GameConfig:
+    screen_width: int = 1280
+    screen_height: int = 720
+    fps: int = 60
+    title: str = "Epic Adventure Game"
+
+@dataclass
+class Entity:
+    x: float
+    y: float
+    width: float
+    height: float
+    speed: float = 5.0
+    health: float = 100.0
+    max_health: float = 100.0
+
+@dataclass
+class Player(Entity):
+    inventory: List[str] = field(default_factory=list)
+    experience: int = 0
+    level: int = 1
+    coins: int = 0
+    
+    def level_up(self):
+        self.level += 1
+        self.max_health += 20
+        self.health = self.max_health
+
+@dataclass
+class Enemy(Entity):
+    damage: float = 10.0
+    reward: int = 50
+
+class WorldGenerator:
+    @staticmethod
+    def generate_terrain(width: int, height: int, scale: float = 100.0) -> np.ndarray:
+        world = np.zeros((width, height))
+        for i in range(width):
+            for j in range(height):
+                world[i][j] = noise.pnoise2(i/scale, j/scale, octaves=4, persistence=0.5)
+        return world
+
+class Renderer:
+    def __init__(self, screen):
+        self.screen = screen
+        self.fonts = {
+            'small': pygame.font.Font(None, 24),
+            'medium': pygame.font.Font(None, 36),
+            'large': pygame.font.Font(None, 48)
+        }
+    
+    def draw_text(self, text: str, font_size: str, color: Tuple[int,int,int], position: Tuple[int,int]):
+        text_surface = self.fonts[font_size].render(text, True, color)
+        self.screen.blit(text_surface, position)
+
+class GamePhysics:
+    @staticmethod
+    def check_collision(entity1: Entity, entity2: Entity) -> bool:
+        return (entity1.x < entity2.x + entity2.width and
+                entity1.x + entity1.width > entity2.x and
+                entity1.y < entity2.y + entity2.height and
+                entity1.y + entity1.height > entity2.y)
+
+class GameEngine:
+    def __init__(self, config: GameConfig):
+        pygame.init()
+        self.config = config
+        self.screen = pygame.display.set_mode((config.screen_width, config.screen_height))
+        pygame.display.set_caption(config.title)
+        
+        self.clock = pygame.time.Clock()
+        self.game_state = GameState.MENU
+        
+        self.player = Player(x=100, y=100, width=50, height=50)
+        self.enemies: List[Enemy] = []
+        self.terrain = WorldGenerator.generate_terrain(config.screen_width, config.screen_height)
+        
+        self.renderer = Renderer(self.screen)
+        self.spawn_enemies()
+    
+    def spawn_enemies(self):
+        for _ in range(10):
+            enemy = Enemy(
+                x=random.randint(0, self.config.screen_width),
+                y=random.randint(0, self.config.screen_height),
+                width=40,
+                height=40,
+                speed=2.0,
+                damage=15.0,
+                reward=random.randint(20, 100)
+            )
+            self.enemies.append(enemy)
+    
+    def handle_events(self):
+        keys = pygame.key.get_pressed()
+        
+        if keys[pygame.K_LEFT]:
+            self.player.x -= self.player.speed
+        if keys[pygame.K_RIGHT]:
+            self.player.x += self.player.speed
+        if keys[pygame.K_UP]:
+            self.player.y -= self.player.speed
+        if keys[pygame.K_DOWN]:
+            self.player.y += self.player.speed
+    
+    def update(self):
+        for enemy in self.enemies[:]:
+            # Simple enemy AI: move towards player
+            dx = self.player.x - enemy.x
+            dy = self.player.y - enemy.y
+            dist = math.hypot(dx, dy)
+            
+            if dist != 0:
+                enemy.x += enemy.speed * dx / dist
+                enemy.y += enemy.speed * dy / dist
+            
+            if GamePhysics.check_collision(self.player, enemy):
+                self.player.health -= enemy.damage
+                self.enemies.remove(enemy)
+                self.player.coins += enemy.reward
+    
+    def render(self):
+        self.screen.fill((135, 206, 235))  # Sky blue background
+        
+        # Draw terrain
+        for x in range(0, self.config.screen_width, 10):
+            for y in range(0, self.config.screen_height, 10):
+                height = self.terrain[x][y]
+                color = (0, int(max(0, min(255, height * 255)), int(max(0, min(255, height * 255)))))
+                pygame.draw.rect(self.screen, color, (x, y, 10, 10))
+        
+        # Draw player
+        pygame.draw.rect(self.screen, (255, 0, 0), 
+                         (self.player.x, self.player.y, self.player.width, self.player.height))
+        
+        # Draw enemies
+        for enemy in self.enemies:
+            pygame.draw.rect(self.screen, (0, 255, 0), 
+                             (enemy.x, enemy.y, enemy.width, enemy.height))
+        
+        # Draw UI
+        self.renderer.draw_text(f"Health: {self.player.health}", 
+                                'small', (0, 0, 0), (10, 10))
+        self.renderer.draw_text(f"Coins: {self.player.coins}", 
+                                'small', (0, 0, 0), (10, 40))
+        
+        pygame.display.flip()
+    
+    def run(self):
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            
+            self.handle_events()
+            self.update()
+            self.render()
+            
+            self.clock.tick(self.config.fps)
+        
+        pygame.quit()
+
+def main():
+    config = GameConfig()
+    game = GameEngine(config)
+    game.run()
+
+if __name__ == "__main__":
+    main()
